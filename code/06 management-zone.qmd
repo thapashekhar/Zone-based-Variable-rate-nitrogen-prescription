@@ -1,0 +1,846 @@
+---
+title: "Creating and validating zones"
+format: html
+---
+
+# Learning Objectives
+
+Today's objectives are to:\
+- **Import** the joined layers
+
+-   Perform a clustering analysis called **k-means** to create zones
+
+-   **Assess** how variables are impacting different zones
+
+-   **Validate** zones with yield spatial-temporal stability areas
+
+# Setup
+
+```{r setup }
+#install.packages("factoextra")
+#install.packages("NbClust")
+#install.packages("ggpubr")
+
+# Packages
+library(dplyr)
+library(tidyr)
+library(tidyverse)
+library(readr)
+library(sf) #vector manipulation
+library(ggplot2)
+library(viridis)
+library(ggthemes)
+library(patchwork) #combining multiple plots
+library(factoextra)
+library(NbClust)
+library(ggpubr)
+
+
+```
+
+#theme map
+```{r}
+mytheme_map <- 
+  theme_map()+
+  theme(legend.position = "right",
+        panel.background = element_rect(fill="gray80",
+                                        color=NA),
+        plot.background = element_rect(fill="gray80",
+                                       color=NA),
+        legend.title = element_text(size=30),
+        legend.text = element_text(size=30),
+        plot.title = element_text(hjust = 0.5, colour = "blue",size = 32),
+        plot.caption = element_text(hjust = 0.5, colour = "blue", size = 28)
+        )
+```
+
+
+
+
+# Data import
+
+```{r all_v}
+all_v <- read_sf("../data/all_v.geojson")
+
+all_v
+```
+# data import for interpolated yield data
+```{r}
+itp_yield <- read_sf("../data/corn_yield16_interpolated.geojson")
+
+itp_yield
+```
+
+
+```{r boundary_w}
+boundary_w0 <- read_sf("../data/boundary/DR1 boundary.shp") %>%
+  st_transform(crs = 6345)
+
+boundary_w <-boundary_w0[2,]
+```
+
+# EDA
+
+```{r summary}
+summary(all_v)
+```
+
+# k-means in theory
+
+k-means is a unsupervised clustering algorithm that partitions the data into k groups, where k is defined by the user (i.e., you).
+
+![](https://agronomy.netlify.app/img/kmeans0.png) \## How does k-mean works?\
+Let's look at the example below:
+
+```{r k-means pre-clustering}
+knitr::include_graphics("https://agronomy.netlify.app/img/kmeans0.png")
+```
+
+> How many groups do we have above?\
+> Can start by specifying a number of clusters (k) that makes sense.
+
+However, sometimes it is **not that easy to visually assess** it if have many variables (each variable adds a dimension, how do you visualize a data set with 10 variables that we want to use for clustering?)
+
+Coming back to this example, here it is clear that k=3, so the **first step of the algorithm is to randomly select** 3 observations in the data set and have them as the cluster centers:\
+![](https://agronomy.netlify.app/img/kmeans1.png)
+
+```{r k-means step1}
+knitr::include_graphics("https://agronomy.netlify.app/img/kmeans1.png")
+```
+
+-   Once the cluster centers have been created, the algorithm calculates the **distance of all observations to each of the clusters centers**, and
+
+-   each observation of the entire data set is **assigned a cluster membership** to the cluster center (mean) closest to that observation (check this on the plot above).
+
+-   At this point, the algorithm uses all members of a cluster and **recalculates the cluster mean** (not an actual observation in the data as it was on the first step)
+
+-   The algorithm repeats the entire process until **cluster means stabilize**
+
+Let's check the entire process for this example below:
+
+```{r k-means in action}
+knitr::include_graphics("https://miro.medium.com/max/960/1*KrcZK0xYgTa4qFrVr0fO2w.gif")
+```
+
+## k-means properties
+
+k-means:\
+- Is used for clustering (e.g., management zone creation)\
+- Is an **unsupervised** analysis (no outcome/response/y on a `y ~ x` formula)\
+- Only takes **predictors** (i.e., explanatory variables/x on a `y ~ x` formula).\
+- Predictors need to be **numerical** (good bye flowdir)
+
+## k-means shortcomings
+
+k-means is useful when clusters are circular (not in a spatial context, but in a x vs. y plot context), but can fail badly when clusters have **odd shapes or outliers**.
+
+Let's check how k-means (first column below) compares to other clustering algorithms (remaining columns) in classifying data sets with different shapes (rows):
+
+```{r clustering algorithms comparison}
+knitr::include_graphics("https://miro.medium.com/max/1400/1*oNt9G9UpVhtyFLDBwEMf8Q.png")
+
+```
+
+> So, can we always use k-means for clustering?
+
+However, it can be **difficult to visually assess clustering performance on data sets with many predictors** (remember, each variable adds one dimension, our brain can make sense of 4-5 dimensions max).
+
+**The curse of dimensionality!**
+
+We can make use of some machine learning techniques like data train/validation/test splits and select model that most accurately predicts new data (beyond the scope of our class).
+
+# k-means in practice
+
+## Data prep for k-means
+
+Before running k-means, we need to make sure that our data:\
+- **does not contain NA values** (k-means doesn't handle NAs and just throughs an error). Even a single cell with NA will cause issues.
+
+-   only contains **numerical columns** (k-means doesn't handle categorical variables)
+
+```{r @ all_v_n}
+all_v_n <- all_v %>%
+  drop_na() %>%
+  dplyr::select(elev_m:eca90_dsm,-flowdir,-aspect)
+  
+
+all_v_n
+```
+
+## Defining k
+
+We need to define the number of clusters we want.\
+Let's try 4.
+
+```{r kmeans initial model }
+mod_km <-kmeans(all_v_n %>% st_drop_geometry(), centers = 10,
+                nstart = 10)
+
+mod_km
+```
+
+The argument `nstart` defines how many times the algorithm should be run. This is important because of the random nature of selecting the observations on the first step. Having nstart=10 runs the model 10 times and avoids an unfortunate initial random selection that ends up creating clusters that do not represent the true data groups.
+
+With **k=4**, our between/total SS was 67.3% (greater the better).\
+Let's try **k=3** and see what happens: between/total SS was 60.2%.
+
+What about **k=10**? between/total SS was 81.1%.
+
+> So let's just select k=10, right?
+
+The thing is that increasing k will always increase between/total SS. We need to find the **sweet spot** where we have **enough ks that represent the actual groups within our data**, but no more that that.
+
+Also, think in a **PA application**. If your field really is highly variable and requires a large number of zones (i.e., k=10), then it is what it is. But if your field only truly has 2-3 zones, creating 10 zones adds extra complexity for the grower without really bringing the benefits (because 2-3 zones would've sufficed).
+
+So how do we **find the best k** value for a given data set?
+
+## Finding k
+
+Since the choice of k can be subjective, we will need to find an **objective** way to select the value of k that most properly represents our data set.
+
+There are different tests and metrics that can be used to select k.\
+All of them run k-means with k ranging from 1 to 10 (in our case), and assess how much information is gained by adding each of the extra groups beyond 1.
+
+Let's explore a few of these metrics:
+
+```{r finding k - wss method}
+# Total error x k
+wss<- fviz_nbclust(all_v_n%>% st_drop_geometry(), 
+             method = "wss", #within sum of square
+             k.max = 10,
+             FUNcluster = kmeans
+             ) #3 to 5
+wss
+```
+
+```{r finding k - silhouette method}
+# Silhouette width
+s<-fviz_nbclust(all_v_n %>%
+               st_drop_geometry(), 
+             method = "s", #silhouette width
+             k.max = 10,
+             FUNcluster = kmeans) #2
+s
+```
+## select k
+```{r}
+w<-wss+
+  theme(axis.text = element_text(size=30),
+        axis.title = element_text(size = 30),
+        title = element_text(size = 32)
+        )
+
+ss<-s+
+   theme(axis.text = element_text(size=30),
+        axis.title = element_text(size = 30),
+        title = element_text(size = 32)
+        )
+w/ss
+ggsave("../output/bestK.png")
+```
+
+What if different metrics give you a different recommendation on k?
+
+We can compute multiple metrics, and select the k value recommended by the majority:
+
+**NOTE**: the code below took 5 minutes to run on my computer. **DO NOT RUN IT IN CLASS!**. You can run it later to check the result if you wish.
+
+```{r finding k - multi-metric vote}
+# Voting from 26 indices  
+bestk <- NbClust(all_v_n %>%
+                   st_drop_geometry(),
+                 distance = "euclidean", 
+                 method ="kmeans", 
+                 index= "all",
+                 min.nc = 2, 
+                 max.nc = 6)
+
+fviz_nbclust(bestk) # 13 tests proposed k=2 as best
+
+```
+
+Let's go with 2 clusters:
+
+```{r @ mod_km2 }
+mod_km2 <- kmeans( all_v_n %>%
+                     st_drop_geometry(),
+                   centers = 2,
+                   nstart = 10
+                   )
+
+mod_km2
+```
+
+# Exploring clusters
+
+Let's save cluster membership as a column in our data, and bring back the geometry so we can map it.
+
+```{r @ zone_df }
+zone_df <- all_v_n %>%
+  # Adding cluster membership column
+  mutate(cluster = mod_km2$cluster)%>%
+  mutate(cluster = factor(cluster))
+zone_df
+
+
+```
+
+```{r cluster poportion}
+zone_df %>%
+  group_by(cluster) %>%
+  tally()
+
+```
+
+```{r cluster map}
+uz<-zone_df %>%
+  ggplot()+
+  geom_sf(aes(fill = cluster), color = NA)+
+  scale_fill_colorblind()+
+  geom_sf(data = boundary_w, fill =NA)+
+  labs(title = "Unsmoothed zones")+
+  mytheme_map
+
+ggsave("../output/zones.png",
+       width = 3,
+       height = 4
+       )
+uz
+```
+
+# Smoothing zones
+
+```{r what is a focal window?}
+knitr::include_graphics("https://geocompr.robinlovelace.net/figures/04_focal_example.png")
+
+```
+
+```{r grid_r}
+library(stars)
+# grid in vector format
+grid_r <-  boundary_w %>%
+  st_make_grid(cellsize = 10) %>%
+  st_as_sf() %>%
+  st_rasterize(dx=10, dy=10) %>%
+  st_crop(boundary_w)
+```
+
+```{r smoothing as raster}
+library(starsExtra)
+library(gstat)
+
+zone_s <- zone_df %>%
+  dplyr::select(cluster) %>%
+  # Transforming from polygon to point
+    st_cast("POINT") %>%
+    # Transforming from geometry to xy (needed by the focal function)
+    st_sfc2xy()%>%
+    # Transforming from point (vector) to raster
+    st_as_stars() %>%
+    # Applying focal filter
+    focal2(w = matrix(1,7,7),
+           fun = "mean",
+           na.rm = TRUE
+           ) %>%
+    # Transforming from raster back to vector
+    st_as_sf() %>%
+    # Interpolating to fill to boundary
+    gstat(formula = cluster ~1,
+          data = .
+          ) %>%
+    predict(grid_r) %>%
+  # Transforming from raster back to vector
+  st_as_sf()%>%
+  # Rounding  
+  dplyr::select(cluster_f = var1.pred) %>%
+  mutate(cluster_f = round(cluster_f, 0)) %>%
+  # Adjusting cluster id from numeric to factor
+  mutate(cluster_f = factor(cluster_f))
+
+
+#zone_s
+
+#zone_s %>%
+ # summary
+
+```
+##sumary
+```{r}
+zone_s %>%
+  group_by(cluster_f) %>%
+  tally()
+
+```
+
+
+
+
+### Different function and matrix size
+```{r}
+m3mean <-zone_s %>%
+  ggplot()+
+  geom_sf(aes(fill=cluster_f), color=NA)+
+  geom_sf(data = boundary_w, fill=NA)+
+  scale_fill_colorblind()+
+  labs(title="3x3, mean")+
+  mytheme_map
+m3mean
+m3max <-zone_s %>%
+  ggplot()+
+  geom_sf(aes(fill=cluster_f), color=NA)+
+  geom_sf(data = boundary_w, fill=NA)+
+  scale_fill_colorblind()+
+  labs(title="3x3, max")+
+  mytheme_map
+m3max
+
+m3min <-zone_s %>%
+  ggplot()+
+  geom_sf(aes(fill=cluster_f), color=NA)+
+  geom_sf(data = boundary_w, fill=NA)+
+  scale_fill_colorblind()+
+  labs(title="3x3, min")+
+  mytheme_map
+m3min
+######################################################################
+m5mean <-zone_s %>%
+  ggplot()+
+  geom_sf(aes(fill=cluster_f), color=NA)+
+  geom_sf(data = boundary_w, fill=NA)+
+  scale_fill_colorblind()+
+  labs(title="5x5, mean")+
+  mytheme_map
+m5mean
+m5max <-zone_s %>%
+  ggplot()+
+  geom_sf(aes(fill=cluster_f), color=NA)+
+  geom_sf(data = boundary_w, fill=NA)+
+  scale_fill_colorblind()+
+  labs(title="5x5, max")+
+  mytheme_map
+m5max
+
+m5min <-zone_s %>%
+  ggplot()+
+  geom_sf(aes(fill=cluster_f), color=NA)+
+  geom_sf(data = boundary_w, fill=NA)+
+  scale_fill_colorblind()+
+  labs(title="5x5, min")+
+  mytheme_map
+m5min
+
+#################################################
+m7mean <-zone_s %>%
+  ggplot()+
+  geom_sf(aes(fill=cluster_f), color=NA)+
+  geom_sf(data = boundary_w, fill=NA)+
+  scale_fill_colorblind()+
+  labs(title="7x7, mean")+
+  mytheme_map
+m7mean
+m7max <-zone_s %>%
+  ggplot()+
+  geom_sf(aes(fill=cluster_f), color=NA)+
+  geom_sf(data = boundary_w, fill=NA)+
+  scale_fill_colorblind()+
+  labs(title="7x7, max")+
+  mytheme_map
+m7max
+
+m7min <-zone_s %>%
+  ggplot()+
+  geom_sf(aes(fill=cluster_f), color=NA)+
+  geom_sf(data = boundary_w, fill=NA)+
+  scale_fill_colorblind()+
+  labs(title="7x7, min")+
+  mytheme_map
+m7min
+##################################################################
+m9mean <-zone_s %>%
+  ggplot()+
+  geom_sf(aes(fill=cluster_f), color=NA)+
+  geom_sf(data = boundary_w, fill=NA)+
+  scale_fill_colorblind()+
+  labs(title="9x9, mean")+
+  mytheme_map
+m9mean
+m9max <-zone_s %>%
+  ggplot()+
+  geom_sf(aes(fill=cluster_f), color=NA)+
+  geom_sf(data = boundary_w, fill=NA)+
+  scale_fill_colorblind()+
+  labs(title="9x9, max")+
+  mytheme_map
+m9max
+
+m9min <-zone_s %>%
+  ggplot()+
+  geom_sf(aes(fill=cluster_f), color=NA)+
+  geom_sf(data = boundary_w, fill=NA)+
+  scale_fill_colorblind()+
+  labs(title="9x9, min")+
+  mytheme_map
+m9min
+```
+
+
+
+###all plot together
+```{r}
+dgn <-"
+  123
+  456
+  789
+"
+m3mean + m3max + m3min + m5mean + m5max + m5min + m7mean + m7max + m7min +plot_layout(guides = "collect", design = dgn)
+ggsave("../output/all_smooth.png", width = 6.26, height = 6.26)
+
+```
+
+##unsmooth and selected smooth
+
+```{r}
+uz + m7mean + labs(title="Smoothed zones, 7x7, mean")+plot_layout(guides = "collect")
+ggsave("../output/unsmoothPlussmooth.png", height = 3, width=6.1)
+```
+
+
+```{r smoothed plot}
+zone_s %>%
+  ggplot()+
+  geom_sf(aes(fill=cluster_f), color=NA)+
+  geom_sf(data = boundary_w, fill=NA)+
+  scale_fill_colorblind()+
+  labs(title="Smoothed zones, 3x3, max")+
+  theme_map()+
+  theme(plot.title = element_text(color="blue"))
+
+ggsave("../output/zonesmoothed_3x3_max.png",
+       width = 3, 
+       height = 4)
+```
+
+How are clusters affected by the variables used to create them?
+
+```{r}
+zone_s_df <- zone_s %>%
+  st_join(all_v,
+          join = st_equals,
+          left =T
+          )%>%
+   st_join(itp_yield,
+          join = st_equals,
+          left =T
+          ) %>%
+  dplyr::select(-flowdir, -aspect)
+
+zone_s_df
+
+zone_s_df %>%
+  summary
+```
+
+```{r cluster x variable boxplots}
+zone_s_df %>%
+  dplyr::select(-yield_class) %>%
+  pivot_longer(cols = elev_m:eca90_dsm) %>%
+  ggplot(aes(x = cluster_f, y = value, color = cluster_f))+
+  geom_boxplot(show.legend = F)+
+  scale_color_colorblind()+
+  facet_wrap(~name, scales="free_y", ncol=2)+
+  stat_compare_means(label = "p.format",
+                     hjust =-.1,
+                     vjust = 1)+
+  theme(legend.position = "none")
+```
+
+> Based on the plots above and what we established about high- and low-stable classes in the previous exercise, which cluster do you expect that will be higher yielding? Why?
+=cluster 2
+
+# Validating clusters
+
+Ok, so we have 2 clusters that are significantly different based on the variables we used to create them. Great!
+
+> What does that mean for yield though? 
+>Are these two clusters creating different yield levels?
+> How can we test that?
+
+```{r clusters and standardized yield}
+zone_s_df %>%
+  pivot_longer(cols = ipyield_buac) %>%
+  ggplot(aes(x=cluster_f, y=value, color=cluster_f))+
+  geom_boxplot(show.legend = F)+
+  scale_color_colorblind()+
+  facet_wrap(~name, scales="free_y", ncol=3)+
+  stat_compare_means(label = "p.format",
+                     hjust = -.1,
+                     vjust=1)+
+  theme(legend.position = "none")
+
+```
+## same as above
+```{r}
+zone_s_df %>%
+  ggplot(aes(x=cluster_f, y=ipyield_buac, color=cluster_f))+
+  geom_boxplot(show.legend = F)+
+  scale_color_colorblind()+
+  labs(x="cluster", y="interpolated yield (bu/ac)")+
+  scale_y_continuous(breaks = c(0,50,100,150,200,250,300,350))+
+  #facet_wrap(~name, scales="free_y", ncol=3)+
+  stat_compare_means(label = "p.format",
+                     hjust = -.1,
+                     vjust=1)+
+  theme(legend.position = "none",
+          legend.title = element_text(size=30),
+        legend.text = element_text(size=30),
+        plot.title = element_text(hjust = 0.5, colour = "blue",size = 32),
+        plot.caption = element_text(hjust = 0.5, colour = "blue", size = 28)
+        
+        )
+```
+## above same thing but with letters
+
+```{r}
+#install.packages("emmeans")
+#install.packages("multcomp")
+#install.packages("multcompView")  #multi comparasion
+#install.packages("purrr")   # can do iteration
+#install.packages("car")
+
+library(emmeans)
+library(multcomp)
+library(purrr)
+library(car)# for anova
+
+anovas <- zone_s_df %>%
+  pivot_longer(ipyield_buac) %>%
+  group_by(name) %>%
+  nest() %>%    #nest groups and nested 
+  mutate(mod = map(data,
+                   ~lm(data = .x,
+                       formula = value ~ cluster_f
+                   )
+  )) %>%
+  mutate(anova = map(mod,
+                     ~Anova(.x))) %>%
+  mutate(cld = map(mod,
+                   ~emmeans(.x, ~cluster_f) %>%
+                     cld(reversed = T, 
+                         alpha = .05,
+                         Letter = letters) %>%
+                     as.data.frame() %>%
+                     mutate(letter = trimws(.group))
+  )) %>%
+  unnest(cld) %>%
+  ungroup() %>%
+  mutate(name = factor(name,
+                       levels = "ipyield_buac"
+                                  ))
+
+
+anovas
+```
+
+# plot with letter
+```{r}
+zone_s_df %>%
+  ggplot(aes(x=cluster_f, y=ipyield_buac, color=cluster_f))+
+  geom_boxplot(show.legend = F)+
+  geom_label(data = anovas,
+             aes(y = emmean,
+                 label = letter,
+  ), size =15
+             )+
+  scale_color_colorblind()+
+  labs(x="cluster", y="interpolated yield (bu/ac)")+
+  scale_y_continuous(breaks = c(0,50,100,150,200,250,300,350))+
+  #facet_wrap(~name, scales="free_y", ncol=3)+
+  stat_compare_means(label = "p.format",
+                     hjust = -.9,
+                     vjust=2,
+                     size = 15)+
+  theme(legend.position = "none",
+          legend.title = element_text(size=30),
+        legend.text = element_text(size=30),
+        plot.title = element_text(hjust = 0.5, colour = "blue",size = 32),
+        plot.caption = element_text(hjust = 0.5, colour = "blue", size = 28),
+        #axis.title = element_text(size = 35),
+        text = element_text(size = 40)
+        )
+ggsave("../output/box_plot_yield_cluster.png")
+```
+
+###same thing for terrain and soil eca variables
+
+```{r}
+zone_s_df %>%
+  dplyr::select(-yield_class,-ipyield_buac,-sy16) %>%
+  pivot_longer(cols = elev_m:eca90_dsm) %>%
+  ggplot(aes(x = cluster_f, y = value, color = cluster_f))+
+  geom_boxplot(show.legend = F)+
+  scale_color_colorblind()+
+  facet_wrap(~name, scales="free_y", ncol=2)+
+  stat_compare_means(label = "p.format",
+                     hjust =-.1,
+                     vjust = 1)+
+  theme(legend.position = "none")
+```
+
+# anvoa for them
+```{r}
+#install.packages("emmeans")
+#install.packages("multcomp")
+#install.packages("multcompView")  #multi comparasion
+#install.packages("purrr")   # can do iteration
+#install.packages("car")
+
+library(emmeans)
+library(multcomp)
+library(purrr)
+library(car)# for anova
+
+anovas <- zone_s_df %>%
+  dplyr::select(-yield_class,-ipyield_buac,-sy16) %>%
+  pivot_longer(cols = elev_m:eca90_dsm) %>%
+  group_by(name) %>%
+  nest() %>%    #nest groups and nested 
+  mutate(mod = map(data,
+                   ~lm(data = .x,
+                       formula = value ~ cluster_f
+                   )
+  )) %>%
+  mutate(anova = map(mod,
+                     ~Anova(.x))) %>%
+  mutate(cld = map(mod,
+                   ~emmeans(.x, ~cluster_f) %>%
+                     cld(reversed = T, 
+                         alpha = .05,
+                         Letter = letters) %>%
+                     as.data.frame() %>%
+                     mutate(letter = trimws(.group))
+  )) %>%
+  unnest(cld) %>%
+  ungroup() %>%
+  mutate(name = factor(name,
+                       levels = c("elev_m",
+                       "slope",
+                       "eca30_dsm",
+                       "eca90_dsm")
+                                  ))
+
+
+anovas
+```
+## boxplot with letter
+```{r}
+zone_s_df %>%
+  dplyr::select(-yield_class,-ipyield_buac,-sy16) %>%
+  pivot_longer(cols = elev_m:eca90_dsm) %>%
+  ggplot(aes(x=cluster_f, y=value, color=cluster_f))+
+  geom_boxplot(show.legend = F)+
+  geom_label(data = anovas,
+             aes(y = emmean,
+                 label = letter,
+  ), size =15
+             )+
+  scale_color_colorblind()+
+  labs(x="cluster", y="value")+
+  #scale_y_continuous(breaks = c(0,50,100,150,200,250,300,350))+
+  facet_wrap(~name, scales="free_y", ncol=2)+
+  stat_compare_means(label = "p.format",
+                     hjust = -.5,
+                     vjust=3,
+                     size = 10)+
+  theme(legend.position = "none",
+          legend.title = element_text(size=30),
+        legend.text = element_text(size=30),
+        plot.title = element_text(hjust = 0.5, colour = "blue",size = 32),
+        plot.caption = element_text(hjust = 0.5, colour = "blue", size = 28),
+        #axis.title = element_text(size = 35),
+        text = element_text(size = 40)
+        )
+ggsave("../output/box_plot_TnS.png")
+```
+
+
+
+
+
+
+## area
+```{r}
+ne<-zone_s_df %>%
+   mutate( area_m2 = st_area(.))%>%
+  group_by(cluster_f) %>%
+  summarise(areaa= sum(area_m2))
+ne
+area_p<-zone_s_df %>%
+  group_by(cluster_f) %>%
+  summarise(grid_cells = length(cluster_f))%>%
+  dplyr::select(cluster = cluster_f, grid_cells)%>%
+  mutate(zone = case_when(
+    cluster==1 ~ "low-yield",
+    cluster==2 ~"high-yield"
+  ))%>%
+  relocate(zone,.after = cluster)%>%
+  mutate(area_m2 = grid_cells*100,total_area=sum(area_m2), area_prop_pct = round((area_m2/total_area)*100,2)) %>%
+  dplyr::select(cluster, zone, grid_cells, area_m2, area_prop_pct) %>%
+  st_drop_geometry()
+write.csv(area_p,"../output/area_proportion.csv")
+```
+
+## yield class proportion in each cluster
+```{r}
+zone_s_df %>%
+  group_by(yield_class) %>%
+  mutate(N = length(yield_class)) %>%
+  group_by(cluster_f, yield_class, N) %>%
+  tally() %>%
+  mutate(prop = round((n/N)*100,1)) %>%
+  ggplot(aes(x = cluster_f,
+             y = prop,
+             fill = cluster_f
+             )) +
+  geom_col() +
+  scale_color_colorblind()+
+  labs(x="cluster", y= "proportion, %",
+       fill= "cluster", title = "Proportions of yield class in each cluster")+
+  scale_y_continuous(breaks = c(0,10,20,30,40,50,60,70,80,90,100))+
+    theme(legend.position = "right",
+        plot.title = element_text(hjust = 0.5, colour = "blue"), #,size = 32),
+        plot.caption = element_text(hjust = 0.5, colour = "blue")#, size = 28)
+        )+
+  facet_grid(~yield_class)+
+  geom_text(aes(label = prop), vjust = 1.5)
+  
+ggsave("../output/new_proportion_yieldclass_cluster.png", height = 4, width = 6)
+```
+
+# Exporting clusters
+
+```{r exporting clusters}
+zone_s_df %>%
+  mutate(zone = case_when (
+    cluster_f=="1" ~ "low",
+    cluster_f =="2" ~ "high"
+  )) %>%
+  write_sf("../data/zone_s.geojson", delete_dsn = T)
+```
+
+# Summary
+
+Today we:\
+- Learned about the k-means algorithm\
+- Found the best k for our data set\
+- Created k=2 zones\
+- Explored the main zone drivers\
+- Validated zones with yield spatial-temporal stability areas\
+- Explored the main yield stability drivers
+
+# Next steps
+
+To wrap up this entire exercise, the next steps will be to:\
+- decide how to handle spatial-temporal stability\
+- create zone-specific variable rate recommendations
+
+# Assignment

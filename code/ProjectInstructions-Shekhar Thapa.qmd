@@ -1,0 +1,359 @@
+---
+title: "Advanced PA 2023 - Final Project"
+format:
+  html:
+    embed-resources: true
+    toc: true
+    theme: cerulean
+knitr: 
+  opts_chunk: 
+    message: false
+    warning: false
+    echo: False
+author: SHEKHAR THAPA
+---
+
+```{r}
+library(readr)
+library(knitr)
+library(tidyverse)
+```
+
+# A. Introduction  
+After taking the Advanced Precision Agriculture (PA) course at UGA, you decided it was time to open your own PA consulting business to offer science-based PA services to producers in Georgia.  
+
+Your first client is Natalie Rojas. Rojas wants to experiment with PA, but has seen her neighbors use out-of-the-box PA services that don't seem to work reliably. She heard about your science-based PA approach, and was very interested in trying out your services in one of her **irrigated** fields. 
+
+Having herself graduated from UGA with a degree in crop and soil sciences, Natalie is very curious about the steps you will be taking and how decisions are made in your workflow. 
+
+Natalie is interested to learn whether her field has different zones related to yield potential, and if she should use variable rate fertilizer application to reduce costs and improve efficiencies in her operation.  
+
+Natalie provides you with 4 layers of information from her field: 
+
+- Field boundary  
+- **Corn** yield (in bu/ac) for one year  
+- Soil ECa (in dS/m)    
+- Elevation (in feet)  
+
+Natalie also provides you with the following history of her field:  
+
+- The next crop to be planted will be corn   
+- The previous crop was peanut  
+- Levels of phosphorus (P) and potassium (K) for this field are very high, and pH is ~ 6.  
+
+
+# B. Directions  
+## Personal information  
+Fill in your first and last name on the YAML of this script under the `author` option.  
+
+Add your first and last name to the end of this .qmd script file name.  
+
+## Data  
+All four data layers above were uploaded to GitHub and can be found in folder `09-finalproject`.  
+
+Some layers are in csv format, others are in shapefile format.  
+
+## Set up  
+Because this is data and analysis for a different field from the one we did in class, you **should not** use the same RStudio project and folders from class.  
+
+As a suggestion, you could follow these steps:  
+
+- On your overall course folder, create a new folder called `finalproject-INITIALS`.  
+
+- Go inside this folder, and create the sub-folders `data`, `code` and `output`.  
+
+- Download the class GitHub repository (https://github.com/leombastos/2023_AdvPA). 
+
+
+- Copy the data files from `09-finalproject` and paste them inside your `data` folder.  
+
+- Copy the `ProjectInstructions.qmd` file and paste it inside your `code` folder.  
+
+- Launch RStudio.   
+
+- Create a New Project, and have it created at the level of your `finalproject-INITIALS` folder.  
+
+## Workflow  
+You are required to follow a similar workflow from what we did in class:  
+
+- Wrangle and clean yield data  
+- Interpolate cleaned yield data  
+- Perform yield stability analysis  
+- Use elevation and create all the interpolated terrain variables we did in class  
+- Interpolate soil ECa for the two different depths  
+- Bring all the layers together to create zones using k-means  
+- Smooth zones, validate them with terrain, soil ec, and yield variables  
+- Create a (possibly variable rate) N prescription  
+
+Remember that you will need to adapt our class code to match these new data sets, which may be of different types and have some different column names.  
+
+You can and should use our class code as a reference. However, **make sure you understand what each step and chunk is doing**. Simply copying and pasting and trying to run everything without thinking through will for sure cause lots of code errors, and take away from you the opportunity to revise what we learned in a concise way.  
+
+I would suggest you have a separate quarto script for each step (as we did in class).  
+
+In class, we created a whole new RStudio project for each step. For the final project, you may use just one RStudio project (as explained above), but having different scripts in the `code` folder for the different steps.  
+
+## Troubleshooting  
+You will for sure run into code issues.  
+This is common and expected, and part of the learning process.  
+
+While this is an individual project, I do encourage all students to help each other, especially as you will likely run into similar problems.  
+
+For that to work, we will be using **GitHub** to ask and answer questions.  
+
+ALL QUESTIONS should be asked in our course GitHub page (https://github.com/leombastos/2023_AdvPA) under "Issues". **Please do not use email for asking questions**.
+
+Make sure to **"Watch"** the repository so you get notified when someone posts on Issues.  
+
+> I anticipate all of you will have multiple questions. The goal with using GitHub is that you can help each other. You will be graded for participation both in asking questions on GitHub and also helping others with their questions.  
+
+With that, when you have issues running code, here are a few resources you can use, in chronological order:  
+
+- **Yourself**: Read the error message, see if you can interpret it and understand what is going on. A message like "Error: object yield could not be found" is self-explanatory.    
+- **Google**: Sometimes just copying an error message and pasting on Google can help you find posts with the answer.  
+- **Peers**: ask your classmates using GitHub.  
+- **Me**: after you have gone through all the sources above without success, I will certainly be glad to assist you. I want to be the last resource you use because that's how it will be after our class is finished: I will be available to assist you in anything R-related in your career, but you will also need to attempt solving them before you reach out.  
+
+## Turning it in  
+**Failing to follow each and all instructions will make you lose points**.  
+
+- You will turn in **this script** to me.  
+
+- Make sure you do NOT remove any of my instructions/questions.  
+- Make sure that when rendered, your questions appear in the table of contents.  
+
+- In this script, you should NOT run analysis-related code.  
+
+- Use this script to only answer your questions with full sentences (proper grammar will be part of your grade), and to bring in figures and/or tables that you created and exported using the analysis scripts.  
+
+- If you want to bring in this script a **figure** that you created using a different script that exported it to the `output` folder, and assuming this script is in your code folder, you would do so by using the following code:
+
+`![](../output/figure1.png)` 
+
+- When creating figures, make sure to add a descriptive title, and that legends are professional and include units.  
+
+- When creating figures and using `color` or `fill`, make sure to use an inclusive, colorblind-friendly palette.  
+
+- If you want to bring in this script a **data frame** (e.g. with a summary) that you created using a different script, you can export that summary as a csv file, and then import it here using a `read_*()` function.  
+
+- Make sure to avoid chunks printing unnecessary messages and warnings. For that, you may use chunk options as we showed in class, e.g. `#| warning: false` at the beginning of the chunk. 
+
+- Make sure to avoid long prints. You can use the function `head()` to solve that.  
+
+- If/when you need to use code in this script, make sure it does not appear on the rendered version. Think of this script as what you would turn in to your customer, who doesn't understand or care about programming languages and their code.  
+
+- Make sure you render it and check how it looks. If things look weird on the rendered version, fix them so they look right and professional. 
+
+# C. Grading  
+Question parts assigned as **extra credit** are mandatory for graduate students, and optional (extra credit) for undergraduate students.  
+
+You will be graded based on:  
+
+- correctly answering questions (make sure you answer all parts of a question for full credit)  
+- following all directions  
+- proper grammar  
+- professionalism of your rendered file  
+- using GitHub both to ask questions and help others  
+- turning in on time  
+
+# D. Questions  
+Once you get started and as you progress in the project tasks, Natalie is following closely your work and has multiple questions for you:
+
+## 1. What is the number of observations, minimum, mean, maximum, and standard deviation for the **raw** yield data (in bu/ac)? Show Natalie a plot with the density distribution of the **raw** yield data.
+
+The number of observations, minimum (bu/ac), mean (bu/ac), maximum (bu/ac) and standard deviation for the raw-dry yield of corn in year 2016 are shown in the table below:
+```{r}
+table <-read.csv("../output/summary_table_raw.csv") %>%
+dplyr::select(-X)
+  
+knitr::kable(table,align="cccccc")
+```
+The density distribution of the raw yield data is shown below. From the density plot, the peak density was observed nearly at 220 bu/ac and high density of zero yield data points (nearly zero) was also observed.
+![](../output/densityplot_rawYield.png)
+
+
+## 2. How many meters of negative buffer did you use for this field? Was that enough to remove low yielding data points near the field border? Show Natalie a map with the field border, points colored by raw yield data, and the buffer outline.  
+The provided boundary file has two polygon layers (as shown in figure below). The layer 2 was selected as the boundary of the field because this layer includes the small chunk of field (located at the north-top side of the field), which is excluded in layer 1.
+
+**Negative buffer of 40 meters** was applied to remove low-yielding data points near the field border. In doing so, the small chunk of the field at the north top of the field gets excluded from the buffer outline. To avoid the exclusion of the small chunk of the field from the buffer outline, a separate boundary polygon enclosing the small chunk of the field was created by taking the difference between boundary layer 2 and layer 1 and then **a negative buffer of 20 meters** was applied on that small chunk of the field. **The combined buffer outline is shown in red color in the raw yield map, corn-2016, (shown below)**. The field boundary is shown in orange color. Using this buffer outline filter, most of the low-yielding points near the field border were removed except some data points near the south and south-east border of the field (can be observed on the clean yield map provided in the next question).
+
+
+![](../output/boundarylayer.png)
+
+
+
+## 3. What is the number of observations, minimum, mean, maximum, and standard deviation for the **cleaned** yield data (in bu/ac)? Show Natalie a plot with the density distribution of the **cleaned** yield data.  
+Using yield min-max, speed min-max, and positional (buffer) filters, the raw yield data having 73,574 observations were filtered out to get clean yield data resulting in 54,137 observations. The summary of the cleaned yield data is shown in the table below. The minimum yield value is shown as 1e-04, which is a very small number and can be considered as zero. [The unit of the yield value is bu/ac.]  
+
+```{r}
+table1 <-read.csv("../output/yield_summary_table_cleaned.csv") %>%
+ dplyr::select(-X)
+  
+knitr::kable(table1,align="cccccc")
+```
+
+The density distribution of the **cleaned** yield data is shown below. We can observe that the distribution is bell-shaped and peaked at approx. 210 bu/ac. The cleaned yield map is also shown below:  
+
+![](../output/denplot_and_clean_map.png)
+
+
+## 4. When creating a grid for interpolation, what grid cell size did you use? Why did you select this size?  
+The grid cell size of **10 meters by 10 meters** was used to create a grid for interpolation. I could have taken an a smaller grid cell size because we have a large number of observations of raw data (very fine spatially resolution data). But a 10 by 10 grid cell will be enough to capture the variability in the data. Moreover, we can use John Deere's 2510L Liquid fertilizer applicator (2510C, 13-row model) that has a working width of 32 ft and 6 in. (~9.9 meters). As this model of sprayer has a working swath width of nearly 10 meters, taking the grid cell size of 10m by 10m will be perfectly matched for variable nutrient management.
+
+## 5. Show Natalie a map of the cleaned interpolated yield data (include the field boundary).  
+The map of cleaned interpolated data along with field boundary is shown below:  
+
+![](../output/interpolated_yield_map.png)
+
+## 6. Show Natalie a map of the interpolated terrain variables (include the field boundary).  
+The maps of interpolated terrain variables (elevation, slope, aspect, and flow direction) along with field boundary are shown below:
+
+![](../output/terrain.png)
+
+## 7. Show Natalie a map of the interpolated soil ECa variables (include the field boundary).  
+The maps of interpolated soil Eca variables (shallow Eca and deep Eca) along with field boundary are shown below:  
+
+![](../output/soileca.png)
+
+## 8. How many clusters/zones did you decide that this field needs? What metric did you use to make this decision? (check the `Code tips` section below for a note on this).  
+Based on the Within Sum of Square (WSS) and Silhouette Width methods of optimization function for an optimum number of clusters in the Kmeans algorithm, both the methods suggested **two clusters/zones** as the best number of clusters that this field needs. So, we have considered 2 clusters in the Kmeans algorithm to divide the field grids into two zones. The elbow point in total within the sum of square vs number of clusters k plot and the highest average silhouette width at various numbers of clusters k was found to be at K=2 (as shown in the plots below). 
+![](../output/bestK.png)
+
+## 9. When smoothing clusters, play around with a few matrix sizes and summarizing functions, then choose one option to continue. What matrix sizes did you try? And what summarizing functions did you try? After experimenting with them, which matrix size and summarizing function did you decide to keep? Why? Show Natalie a map of the final smoothed clusters/zones below (include field boundary).  
+The matrix sizes of **3x3, 5x5 & 7x7** and summarizing functions: **mean, maximum & minimum** were tried to produce smooth zones. The smooth zones output at different combinations of matrix sizes and summarizing functions are shown below:  
+
+![](../output/all_smooth.png)
+Among all of the above-smoothed maps, the one with **7x7 matrix size and mean as summarizing function** was selected because this combination of matrix size and the summarizing function produced the most smoothed zones and had the closeness of zones distribution as in the original (unsmoothed) map. From the above maps, we can see, as we increase the size of the matrix, the smoothness of the zone increases. The matrix size greater than 7x7 was not included because it will overfit or over-smooth the zones, not representing the actual field properties.  Among summarizing functions, the "minimum" function made it worse, whereas the "mean" function performed best by giving the most smooth zones and zonal boundaries.
+
+The original unsmoothed zones map and the selected smoothed zones map are shown below:  
+
+![](../output/unsmoothPlussmooth.png)
+
+## 10. Use yield data to validate the clusters. Show below a boxplot of cleaned interpolated yield values for the different clusters. Based on this boxplot, how would you characterize each cluster (e.g., cluster x is high yielding zone and cluster y is low yielding zone). **Extra credit**: include the analysis of variance letter separation on the boxplots.  
+The following are the boxplots of cleaned interpolated yield values for two different clusters. Although there are some outliers in both clusters, they are significantly different based on interpolated yield data. The interpolated yield value for cluster 2 is significantly greater than that of cluster 1. So, **cluster 2 is high yielding zone and cluster 1 is low yielding zone**.
+
+![](../output/box_plot_yield_cluster.png)
+
+## 11. What was the proportion of high and low yield areas for each of the zones?  
+The proportions of yield classes (high yield area, low yield area, and medium yield area) for each of the zones are shown in the bar diagram below:  
+
+![](../output/new_proportion_yieldclass_cluster.png)
+From the above diagram, we can observe that:  
+
+- **88.9% of the total high-yield areas fall under zone 2 (cluster 2) whereas the remaining 11.1% of the total high-yield areas fall under zone 1 (cluster 1)**.
+- **92.2% of the total low-yield areas fall under zone 1 (cluster 1) whereas the remaining 7.8% of the total low-yield areas fall under zone 2 (cluster 2)**.  
+
+**Extra notes**:  
+
+- The yield classes were categorized based on the median value of interpolated yield data. The yield data which fall above 120% of the median-yield value were categorized as high-yield data, whereas data points that fall below 80% of the median-yield value were categorized as low-yield data. Yield data points that fall between 80 to 120% of the median-yield value were categorized as medium-yield data.  
+
+- **57.04 %** of the total field area falls under zone 2 and the rest, **42.96%** of the total field area falls under zone 1.
+
+
+## 12. Now that we know the yield class of each cluster, how are they affected by soil ECa at different depths, and by elevation (e.g., high yield cluster has higher/lower eca, etc.)? Include below a boxplot to explore those relationships similarly to how we did in class. **Extra credit**: include the analysis of variance letter separation on the boxplots.   
+The relationships of the yield class of each cluster with elevation and soil ECa at different depths can be observed from the following boxplots. High yield zone (cluster 2) and low yield zone (cluster 1) have significantly different shallow ECa (eca30), deep Eca (eca90), elevation, and slope. The following points can be concluded from the boxplots:  
+
+- High-yield zone (cluster 2) has significantly higher soil eca (shallow and deep) than the low-yield zone (cluster 1).  
+- High-yield zone (cluster 2) has significantly higher elevation than the low-yield zone (cluster 1).  
+- High-yield zone (cluster 2) has significantly higher slope than the low-yield zone (cluster 1).
+
+
+![](../output/box_plot_TnS.png)
+
+
+## 13. Were you able to validate clusters with temporal yield data? Explain why/why not.  
+Since we are provided only one-year yield data, we are unable to validate clusters with temporal yield data. We need multi-year yield data to create temporal yield variables, then we can use those variables to validate the clusters.
+
+
+## 14. Given the number of years with available yield data, how certain are you in using these zones for multiple years into the future? What would you explain to Natalie about the validity of the zones, and what do you propose to overcome this in coming years? Answer as if you were speaking with Natalie.  
+Given the number of years with available yield data, as long as the terrain variables and Soil ECas remain constant or similar, these zones won't be changing much in multiple years into the future. if there no heavy rainfall avoiding soil erosion, there won't be much change in terrain variables. If the soil Eca variables are controlled by only soil texture, it won't change much in the coming years as well. So, if terrain variables and soil Ecas can be maintained the same in the future, definitely we can use these zones for multiple years into the future.  
+
+Explanation to Natalie about the validity of the zones:  
+As we do not have multi-year yield data, we are not much certain about the yield class of the produced management zones. We are not able to assess how much stable the yield classes are over the years. With one-year data, we can not be sure that the produced yield classes of zones are due to inherent properties of the field or any other external factors. So, we need multi-year yield data to validate the zones with temporal yield stability variables. In the coming years, keeping the field management variables somehow similar, the yield data must be collected so that the temporal yield stability analysis can be carried out.
+
+
+
+## 15. What was the yield potential (in bu/ac) of each zone?  
+The yield potentials in bu/ac (90th quantile of interpolated yield data of each zone) are shown below:
+```{r}
+table2 <-read.csv("../data/yieldpotential.csv") %>%
+  dplyr::select(-X)
+  
+knitr::kable(table2, align="ccc")
+```
+
+
+## 16. How did you determine the total N rate (what algorithm, from which website)?  
+Instructions, guide, and formula to determine the total N rate were taken from 
+[2023-Corn-Production_Guide_UGA](https://site.extension.uga.edu/plowpoints/files/2023/03/2023-Corn-Production-Guide.pdf) and [UGFertEx](https://aesl.ces.uga.edu/calculators/ugfertex/).  
+
+History of the field:  
+
+- The Field is irrigated
+- The next crop to be planted will be corn   
+- The previous crop was peanut  
+- Levels of phosphorus (P) and potassium (K) for this field are very high, and pH is ~ 6.  
+
+Based on the history of the field, the required N rate is determine using the following formula (source: [UGFertEx](https://aesl.ces.uga.edu/calculators/ugfertex/))
+
+$$Total\ N\ Rate = 1.2\ \times\ Yield\ Potential\ -\ 30 $$ 
+**Note:** Split the N applications, applying 1/4 to 1/3 at planting, and the remainder as a sidedress application when the corn is 18-24 inches tall.
+
+
+## 17. What was the in-season N rate (in lbs N/ac) of each zone? Show below a map with this information (include field boundary).  
+The total N rates for high and low-yield zones were found to be 236.4 lbs N/ac and 225.5 lbs N/ac, respectively. 1/3 of the total N rate will be applied during planting or pre-planting. Let's apply **the pre-planting N rate at a fixed rate equal to 74 lbs N/ac**. This value is the minimum value among the calculated pre-planting N rate for each zone. **The in-season N rates for the high and low yield zones were found to be 162.4 lbs N/ac and 151.5 lbs N/ac, respectively**. The yield potentials, total N rates, pre-planting total N rates, in-season total N rates, and required in-season UAN 28% rates for each of the zones are shown in the table below:
+```{r}
+table4 <-read.csv("../data/vrn.csv") %>%
+  dplyr::select(-X)
+  
+knitr::kable(table4, align = "cccccc")
+```
+
+The following map shows the required in-season N rates for each zone:
+
+![](../output/isNrate.png)
+
+## 18. What was the in-season UAN28% rate (in gal/ac) of each zone? Show below a map with this information (include field boundary).  
+UAN28% is the source of Nitrogen. The required in-season UAN28% rates for high and low-yield zones were **54.1 gal/ac and 50.5 gal/ac**, respectively. The following map shows the UAN28% rates for each zone:  
+
+![](../output/VRN.png)  
+
+## 19. Based on the answers above, would you recommend Natalie to treat her field using variable rate N application? Why/why not? Explain as if you were speaking with her.  
+Summarizing the above information in the following table. If Natalie treats her field using variable rate N application, she will be applying 54.1 UAN28 gal/ac in the high yield zone and 50.5 UAN28 gal/ac in the low yield zone. It is just a 3.6 UAN28 gal/ac difference between the zones. If Natalie chooses to apply Nitrogen at a fixed rate of 54.1 UAN28 gal/ac, she will need an extra 397 gallons of UAN28 for the entire field than in the variable N rate. In other words, using a variable N rate, Natalie will be saving only 397 gallons of UAN28. **This is not a significant save. So, I would recommend Natalie to treat her field using a fixed rate N application with 54.1 UAN28 gal/ac throughout the field.**  
+
+```{r}
+table4 <-read.csv("../data/vrn-uangal.csv") %>%
+  dplyr::select(-X)
+  
+knitr::kable(table4,, align = "ccccc")
+```
+
+## 20. Regardless of your recommendation above, Natalie will still need to apply N to this field. How many gallons of UAN28% would Natalie need to order for her in-season N application for this field?  
+For variable in-season N rate application for this field, the field needs 13501 gals of UAN28. To be on the safe side by ordering 20% more, **Natalie needs to order 16202 gals of UAN28 for her in-season N application for this field**.
+
+## 21. **Extra credit** Tell me what was your most favorite part of this entire course. Explain in detail why.  
+For me, most favorite part of this entire course was how we went over the R scripts thoroughly. As I like coding and am very interested in the agricultural data science field, I enjoyed all the steps we went through from data importing, cleaning, analyzing, visualizing, and exporting. The detailed and clear explanations of the R-coding and useful functions were very much helpful.  
+
+## 22. **Extra credit** Tell me what was your least favorite part of this entire course. Explain in detail why.  
+For me, my least favorite part would be the assignment format on the topic of "Global Navigation Satellite Systems". The assignment was pretty long. It could have split into 2 or 3 separate assignments. The quality of the questions could have been better, not being just like definitions of some terms. 
+
+# E. Submitting and deadline  
+All I need is the rendered version of **this script**. 
+
+Send that file to **lmbastos@uga.edu** by **May 9th** 11:59 pm.
+
+# F. Code tips  
+## Data import  
+- Check that the path you are specifying is correct  
+- Check that you are using the proper function based on the file type (read_csv for csv files, read_sf for shape files/vector data)  
+- To import a shapefile, specify the `.shp` file in the path inside `read_sf()` function.   
+
+## Troubleshooting a pipe stream  
+- If you run a pipe stream (multiple functions connected by multiple pipes) and there is error in the code, comment off the first pipe, run it. If problem did not appear, uncomment this first pipe, comment off second pipe, run it. Keep doing this until you find what function in the pipe is causing the error. That will make it easier to pinpoint where the error is coming from and address it.  
+
+## K-means: finding k  
+- When defining the proper number of clusters (k) for this data, only use the techniques `WSS` and `Silhouette width`. **Do not** attempt to run the analysis code that contains multiple indices (function `NbClust()`). I tried that on my computer, and for some reason it was not working properly, and it also takes a long time to run which was making my RStudio crash.  
+
+
+## Exporting spatial data to file  
+- To export a spatial vector to file, we use the function `write_sf()`. Don't forget to change one of its arguments to make sure you don't append (duplicate the number of rows) in case you already have the same file saved from a previous run: `write_sf(delete_dsn = T)`.  

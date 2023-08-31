@@ -1,0 +1,226 @@
+---
+title: "Yield stability"
+author: "All of us"
+format:
+  html:
+    code-fold: false
+    embed-resources: true
+    toc: true
+    number-sections: true
+    theme: journal
+    #cerulean, journal, quartz, sketchy, slate, morph, superhero, vapor
+knitr: 
+  opts_chunk: 
+    message: false
+    warning: false
+---
+
+# Learning Objectives  
+Today, our learning objectives are to:  
+
+- Import **interpolated cleaned yield data** for 3 years  
+- Create year-specific spatial yield stability areas  
+- Create spatio-temporal yield stability areas  
+- Export the final yield stability layer  
+
+# Setup  
+```{r setup }
+# Packages
+library(dplyr)
+library(tidyr)
+library(sf)
+library(ggplot2)
+library(viridis)
+library(ggthemes)
+library(tibble)
+```
+
+## theme map
+```{r}
+mytheme_map <- 
+  theme_map()+
+  theme(legend.position = "right",
+        panel.background = element_rect(fill="gray80",
+                                        color=NA),
+        plot.background = element_rect(fill="gray80",
+                                       color=NA),
+        legend.title = element_text(size=30),
+        legend.text = element_text(size=30),
+        plot.title = element_text(hjust = 0.5, colour = "blue",size = 32),
+        plot.caption = element_text(hjust = 0.5, colour = "blue", size = 28)
+        )
+```
+
+
+##import boundary
+```{r}
+boundary_w0 <- read_sf("../data/boundary/DR1 boundary.shp") %>%
+  st_transform(crs = 6345)
+boundary_w <- boundary_w0[2,]
+boundary_w
+```
+
+
+## Data import
+```{r corn_yieldic16}
+corn_yieldic16 <- read_sf("../data/corn_yield16_interpolated.geojson")
+
+corn_yieldic16
+
+summary(corn_yieldic16)
+```
+
+# Spatial stability  
+Every time we deal with yield data across various years/fields/crops, there are challenges:  
+
+- If different years/fields/crops, how to compare?  
+- Even if same field but different years/crops, how to compare?  
+
+Some solutions:  
+
+- Standardize by mean/median/max (numerical). Ex. field mean in a given year was 1500 lb/ac, so divide all other yield values from that year by 1500.  
+
+- Standardize by quantile (categorical). Ex. field median (e.g., 50% quantile) was 2000 lb/ac, so all observations below 2000 are classified as "low", and all above 2000 are classified as "high" for that year.  
+
+**In our case, we are using the numerical approach.**
+First let's calculate median yield per year, and then divide all yield observations for that year by that year's median.
+
+Beginning with 2017 yield data.
+```{r sy_16}
+sy_16 <- corn_yieldic16 %>%
+  mutate(medianyield_buac = median(ipyield_buac)) %>%
+  mutate(sy=(ipyield_buac/medianyield_buac)*100,
+         sy = round(sy, 1)
+  ) %>%
+  dplyr::select(sy16=sy, geometry)
+
+summary(sy_16$sy16)
+```
+Let's check how does this standardization looks like in space.  
+
+```{r sy_16 map}
+sy_16_map <- ggplot()+
+  geom_sf(data = sy_16,
+          aes(fill = sy16), 
+          color = NA)+
+  geom_sf(data = boundary_w, fill =NA, color = "red", linewidth =0.2)+
+  scale_fill_gradient2(low = "#440154FF",
+                       mid = "white",
+                       high = "#22A884FF",
+                       midpoint = 100,
+                       breaks = seq(0,150,20)
+  )+
+  labs(title="2016",
+       fill="Median-\nstandardized \nyield")+
+  theme(legend.position = "right")+
+  mytheme_map
+
+
+sy_16_map 
+```
+ 
+
+
+```{r}
+summary(sy_16$sy16) #4.6 to 149
+```
+
+# Spatio-temporal stability  
+To perform a temporal analysis, we need to merge all three data frames into one.  
+
+After joining the data sets, we still only have their information on year-specific yield spatial standardization. 
+
+> How can we merge these pieces of information to create a spatial-temporal classification?  
+
+We can use the yield mean and coefficient of variation (CV) of each pixel over 3 years, and use that to guide our decision.    
+
+First, let's merge the 3 data sets and calculate pixel-based mean and cv.
+
+
+Density plot:
+```{r density plot }
+ggplot(sy_16, aes(x = sy16))+
+  geom_density()+
+  geom_rug()
+
+```
+
+Standardized mean map
+```{r mean map}
+sy_all_mean <- ggplot()+
+  geom_sf(data = sy_16,
+          aes(fill = sy16), 
+          color = NA)+
+  scale_fill_viridis_b(option="C",
+                       breaks = c(80, 120))+
+  theme_map()
+
+sy_all_mean
+```
+
+# Classification  
+
+Here's how I want to classify our spatial-temporal classes:  
+
+- If a pixel has CV > 30%, then it is classified as "unstable"  
+
+- If a pixel has CV < 30%, and mean standardized yield > 120%, then it is classified as "high-stable"  
+
+- If a pixel has CV < 30%, and mean standardized yield > 80% and < 120%, then it is classified as "medium-stable" 
+
+- If a pixel has CV < 30%, and mean standardized yield < 80%, then it is classified as "low-stable" 
+
+Let's apply these rules below:  
+
+```{r}
+sy_16_yield_class <- sy_16 %>%
+  mutate(yield_class = case_when(
+      sy16 >= 120 ~ "high-yield",
+      sy16 >= 80 & sy16 < 120 ~ "medium-yield",
+      sy16 < 80 ~ "low-yield"
+  ))
+
+sy_16_yield_class 
+```
+
+Now, let's plot the classes.  
+```{r}
+ggplot()+
+  geom_sf(data = sy_16_yield_class,
+          aes(fill = yield_class), 
+          color = NA)+
+  scale_fill_viridis_d(option="C")+
+  theme_map()
+```
+
+
+> Just eyeballing, what is the major stability class? And the minor?  
+
+# Classes proportion  
+Let's calculate below:  
+```{r proportion per stability zone}
+sy_16_yield_class %>%
+  group_by(yield_class) %>%
+  tally() %>%
+  mutate(prop=(n/10397)*100)
+
+
+
+```
+
+# Exporting  
+Let's export this data set so we can use it again in a future exercise.  
+```{r exporting yield stability}
+write_sf(sy_16_yield_class, 
+         "../data/sy_16_yield_class.geojson",
+         delete_dsn = T)
+```
+
+# Summary  
+
+Today we:  
+
+- Imported all three interpolated cleaned yield data  
+- Standardized each year-specific yield pixel by dividing it by the year median (spatial stability)  
+- Joined the three data sets, calculated pixel-based CV, and classified each pixel as stable high, stable low, or unstable based on pixel standardized yield and CV (spatial-temporal stability)  
+- Exported the spatial-temporal stability layer   

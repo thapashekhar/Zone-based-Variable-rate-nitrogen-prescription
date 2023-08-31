@@ -1,0 +1,211 @@
+---
+title: "Yield monitor wrangling - 2016"
+author: "SHEKHAR THAPA"
+format:
+  html:
+    code-fold: false
+    embed-resources: true
+    toc: true
+    number-sections: true
+    theme: journal
+    #cerulean, journal, quartz, sketchy, slate, morph, superhero, vapor
+knitr: 
+  opts_chunk: 
+    message: false
+    warning: false
+---
+
+# Learning objectives  
+Today's learning objectives are:  
+
+- Talk about the role of yield monitor data in ag  
+- Import yield data  
+- Explore with tables, plots, and maps (EDA)  
+- Learn and implement data wrangling steps for geospatial data  
+
+# Setup  
+## Loading packages  
+```{r setup }
+#| message: false
+
+#loading packages (add to the list as we need) 
+library(readr)
+library(janitor)
+library(dplyr)
+library(tidyr)
+library(ggplot2)
+library(sf)
+library(viridis)
+library(mapview)
+
+
+library(tidyverse)
+library(readxl)
+library(dlookr)
+library(janitor)
+library(ggthemes)
+
+```
+
+## Importing data  
+```{r corn_yield16 }
+corn_yield16 <- read.csv("../data/Deer Run1 2016 Yield.csv")
+
+summary(corn_yield16)
+
+```
+
+# EDA  
+```{r summary}
+#summary(corn_yield16) 
+#diagnose(corn_yield16)
+summary_raw <-summarise(corn_yield16,
+          data = "raw data",
+          observations = length(corn_yield16$DryYield), min = min(corn_yield16$DryYield),
+          mean = mean(corn_yield16$DryYield),
+          max = max(corn_yield16$DryYield),
+          standard_deviation = sd(corn_yield16$DryYield)
+          )
+summary_raw
+write.csv(summary_raw,"../output/summary_table_raw.csv")
+```
+
+What columns do you think are relevant?  
+
+```{r yield distribution - density plot}
+ggplot(corn_yield16, aes(x=DryYield))+
+  geom_density()+
+  geom_rug()+
+  scale_x_continuous(breaks = round(seq(0,2000, by =200),1))+
+  labs(title = "Density plot - raw yield 2016 - corn",
+       x = "yield (bu/ac)")+
+  theme(plot.title = element_text(hjust = 0.5, colour = "blue"),
+        text = element_text(size = 30)
+        )
+ggsave("../output/densityplot_rawYield.png",
+       width = 6, 
+       height = 4,
+       )
+  
+
+```
+
+```{r speed distribution - density plot}
+ggplot(corn_yield16, aes(x=speed_mph))+
+  geom_density()+
+  geom_rug()
+
+```
+
+```{r yield map}
+ggplot(corn_yield16, aes(x = Long,
+                    y = Lat))+
+  geom_point(aes(color = DryYield))+
+  scale_color_viridis_b()
+
+```
+
+```{r yield restricted map}
+corn_yield16 %>%
+  filter(DryYield <750) %>%
+ggplot(aes(x = Long,
+                    y = Lat))+
+  geom_point(aes(color = DryYield))+
+  scale_color_viridis_b()
+
+```
+
+```{r yield x speed}
+ggplot(corn_yield16, aes(x=speed_mph, 
+                    y=DryYield))+
+  geom_point()+
+  geom_smooth()
+
+```
+Do we need to clean this data?  
+From a yield map quality perspective, what steps would you do?  
+
+- Clean based on speed  
+- Clean based on yield  
+
+```{r data needs}
+corn_yield16
+```
+
+From a data wrangling perspective, what steps would you do?  
+
+- standardize column naming style (for ease of use)  
+- select only needed columns:  
+
+  - Speed  
+  - Dry_Yield  
+  - POINT_X  
+  - POINT_Y  
+
+- rename columns to include measurement units  
+- create columns in metric system  
+- transform it into spatial object (as of now, it is only a data frame)  
+- transform from geographic (unprojected) to projected  
+
+# Wrangling  
+```{r corn_yield16_w}
+corn_yield16_w <- corn_yield16 %>%
+  # Cleaning names
+  clean_names() %>%
+  # Selecting desired variables and renaming some of them
+  dplyr::select(speed_mph,
+                yield_buac = dry_yield,
+                long,
+                lat) %>%
+  # Transforming from english to metric units
+  mutate(speed_kmh=speed_mph*1.60934) %>%
+  # Transforming into sf object
+  st_as_sf(coords = c("long","lat")) %>%
+  # Setting native crs (geographic)
+  st_set_crs(value = 4326) %>% #epsg value for wgs84
+  # Transforming from geodraphic to prjected CRS
+  st_transform(crs = 6345) # projected co. value epsg
+corn_yield16_w
+
+```
+
+# Maps  
+```{r static}
+corn_yield16_w %>%
+  filter(yield_buac < 750) %>%
+  ggplot()+
+  geom_sf(aes(color = yield_buac), size = .1)+
+  scale_color_viridis_b()
+
+```
+
+```{r interactive}
+corn_yield16_w %>%
+  filter(yield_buac < 750) %>%
+  mapview(zcol = "yield_buac",
+          lwd = 0, # removes outline of point 
+          cex= .1, #point size
+          alpha.regions =1,
+          map.types = "Esri.WorldImagery"
+          )
+
+```
+
+
+# Quiz  
+Where in the field do you see low-yielding areas? Of these different low-yielding areas, which ones do you think can be related to yield monitoring errors? Why?  
+
+Tip: Toggle the yield layer on and off above, it may help you to answer.  
+
+You have 5 min. Send me your answer by email (lmbastos@uga.edu). This will also be your attendance.  
+
+
+
+# Exporting  
+```{r}
+
+write_sf(corn_yield16_w,"../data/corn_yield16_w_processed.geojson", delete_dsn = T)
+
+```
+
+

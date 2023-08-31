@@ -1,0 +1,624 @@
+---
+title: "Corn Yield monitor editor - 2016"
+author: "SHEKHAR THAPA"
+format:
+  html:
+    code-fold: false
+    embed-resources: true
+    toc: true
+    number-sections: true
+    theme: sketchy
+    #cerulean, journal, quartz, sketchy, slate, morph, superhero, vapor
+knitr: 
+  opts_chunk: 
+    message: false
+    warning: false
+---
+
+# Learning objectives  
+Today’s learning objectives are:  
+
+- Learn and implement yield monitor data cleaning steps  
+- Compare numerically and graphically raw and cleaned yield monitor data
+
+# Setup  
+## Loading packages  
+```{r  }
+#| message: false
+
+# installing 
+#install.packages("leafsync")
+#install.packages("patchwork")
+
+#loading packages (add to the list as we need) 
+library(readr)
+library(janitor)
+library(dplyr)
+library(tidyr)
+library(ggplot2)
+library(sf)
+library(viridis)
+library(mapview)
+library(leafsync)
+library(patchwork)
+
+```
+
+## Importing data  
+```{r }
+corn_yield16_w <- read_sf("../data/corn_yield16_w_processed.geojson") %>%
+  dplyr::select(speed_mph, yield_buac)
+
+corn_yield16_w 
+
+```
+
+# EDA  
+## Summary  
+```{r }
+summary(corn_yield16_w) 
+```
+```{r}
+ggplot(data = corn_yield16_w)+
+  geom_density(aes(x=yield_buac))+
+  geom_rug()
+
+```
+```{r}
+mytheme_map <- 
+  theme_map()+
+  theme(legend.position = "right",
+        panel.background = element_rect(fill="gray80",
+                                        color=NA),
+        plot.background = element_rect(fill="gray80",
+                                       color=NA),
+        legend.title = element_text(size=30),
+        legend.text = element_text(size=30),
+        plot.title = element_text(hjust = 0.5, colour = "blue",size = 32),
+        plot.caption = element_text(hjust = 0.5, colour = "blue", size = 28)
+        )
+```
+
+## Raw map
+```{r}
+yieldmap_raw <- ggplot(corn_yield16_w)+
+  geom_sf(aes(color = yield_buac), size =.17)+
+  scale_color_viridis_b()+
+  labs(caption = "Raw yield map, corn-2016",
+        color = "Raw yield (bu/ac)")+
+  mytheme_map
+
+yieldmap_raw
+ggsave("../output/yieldmap_raw.png", width = 6,height = 4)
+```
+
+## Raw map interactive  
+```{r}
+#| warning: false
+
+yieldmap_raw_int <- corn_yield16_w %>%
+  #filter(yield_buac < 750) %>%
+  mapview(zcol = "yield_buac",
+        col.regions = viridis(3),
+        alpha.regions = 1,
+        cex = .1,
+        lwd = 0,
+        map.types = "Esri.WorldImagery"
+)
+
+yieldmap_raw_int
+```
+
+Today we are applying 5 filters:  
+
+- Min and max yield  
+- Min and max speed  
+- Position  
+
+# Yield editor - Min/max yield  
+## Raw yield distribution  
+
+```{r}
+ggplot(data = corn_yield16_w, 
+       aes(x = yield_buac))+
+  geom_density()+
+  geom_rug()
+```
+
+## Raw yield summary  
+```{r}
+summary(corn_yield16_w$yield_buac)
+```
+```{r}
+ggplot(corn_yield16_w, aes(y=yield_buac))+
+  geom_boxplot()
+
+```
+
+## Raw yield quantiles  
+```{r}
+lowq_yield <- quantile(corn_yield16_w$yield_buac,0.1) #10% qunatile
+lowq_yield
+
+upq_yield <- quantile(corn_yield16_w$yield_buac,0.99) #99% quantile
+upq_yield
+
+iqr <- upq_yield - lowq_yield
+iqr
+
+miny <- lowq_yield-(0.25*iqr)
+miny
+miny <- 0
+
+maxy <- upq_yield + (0.25*iqr)
+maxy
+
+```
+
+## Min/max raw yield quantiles plot  
+```{r}
+ggplot()+
+  geom_density(data = corn_yield16_w, 
+               aes(x = yield_buac))+
+  geom_vline(xintercept =lowq_yield,
+             color = "red",
+             linetype = 2
+             )+
+  geom_vline(xintercept =upq_yield,
+             color = "blue",
+             linetype = 2
+             )+
+  geom_vline(xintercept =maxy,
+             color = "blue",
+             linetype = 1
+             )+
+  geom_vline(xintercept =miny,
+             color = "red",
+             linetype = 1
+             )+
+  annotate(
+    geom = "rect",
+    ymin = 0,
+    ymax =Inf,
+    xmin = miny,
+    xmax =maxy,
+    alpha =.6,
+    fill = "green"
+  )
+
+
+```
+
+## Filtering min/max raw yield  
+```{r}
+corn_yield16_w_yf <- corn_yield16_w %>%
+  filter(yield_buac>miny & yield_buac<maxy)
+summary(corn_yield16_w_yf)
+
+```
+
+Before filtering we had a total of 73,574 data rows.
+How many rows now after filtering?
+62,403
+
+## Min/max yield cleaned summary  
+```{r}
+summary(corn_yield16_w_yf$yield_buac)
+
+ggplot(data = corn_yield16_w_yf, 
+       aes(x = yield_buac))+
+  geom_density()+
+  geom_rug()
+```
+All right, all done filtering based on yield min and max.
+Now let’s do the same for speed.
+
+# Yield editor - Min/max speed  
+## Raw speed distribution  
+```{r}
+ggplot(data = corn_yield16_w, 
+       aes(x = speed_mph))+
+  geom_density()+
+  geom_rug()
+```
+
+## Raw speed summary  
+```{r}
+summary(corn_yield16_w$speed_mph) 
+```
+
+## Raw speed quantiles  
+```{r}
+lowq_speed <- quantile(corn_yield16_w$speed_mph,0.08, na.rm = T)
+lowq_speed
+
+upq_speed <- quantile(corn_yield16_w$speed_mph,0.99, na.rm = T)
+upq_speed
+
+iqr <- upq_speed - lowq_speed
+iqr
+
+minv <- lowq_speed - (0.18*iqr)
+minv
+
+maxv <- upq_speed + (0.18*iqr)
+maxv
+```
+
+## Min/max raw speed quantiles plot  
+```{r}
+ggplot()+
+  geom_density(data = corn_yield16_w, 
+               aes(x = speed_mph))+
+  geom_vline(xintercept = c(lowq_speed, upq_speed,minv,maxv),  #another way to use it
+             color = c("red", "blue","red","blue"),
+             linetype = c(2,2,1,1)
+             )+
+  # geom_vline(xintercept = upq_speed, 
+  #            color = "blue", 
+  #            linetype = 2)+
+  # geom_vline(xintercept = minv, 
+  #            color = "red", 
+  #            linetype =1)+
+  # geom_vline(xintercept = maxv, 
+  #            color = "blue", 
+  #            linetype = 1)+
+  annotate(geom = "rect",
+           ymin = 0, 
+           ymax = Inf,
+           xmin = minv, 
+           xmax = maxv,
+           alpha = .6, 
+           fill = "green")
+
+```
+
+## Filtering min/max raw speed  
+```{r}
+corn_yield16_w_sf <- corn_yield16_w_yf%>%
+  filter(speed_mph>minv & speed_mph<maxv)
+
+corn_yield16_w_sf
+
+```
+
+
+## Min/max speed cleaned summary  
+```{r}
+summary(corn_yield16_w_sf$speed_mph)
+summary(corn_yield16_w_sf$yield_buac)
+
+
+ggplot(data = corn_yield16_w_sf, 
+       aes(x = speed_mph))+
+  geom_density()+
+  geom_rug()
+```
+```{r}
+corn_yield16_w_sf%>% ggplot()+
+  geom_sf(aes(color = yield_buac), size =0.1) +
+  scale_color_viridis_b()
+```
+```{r}
+yieldmap_sf_int <- corn_yield16_w_sf %>%
+  mapview(zcol = "yield_buac",
+        col.regions = viridis(3),
+        alpha.regions = 1,
+        cex = .05,
+        lwd = 0,
+        map.types = "Esri.WorldImagery"
+)
+
+yieldmap_sf_int
+```
+
+# Yield editor - Position  
+Original position filter was based on quantiles too.
+Why filter based on boundary?  
+
+## Field boundary  
+```{r}
+boundary <-read_sf("../data/boundary/DR1 boundary.shp")%>%
+  st_transform(crs = 6345)#%>%
+  #st_buffer (dist = -11, joinStyle = "ROUND", mitreLimit = 1,nQuadSegs = 100, endCapStyle ="ROUND")
+boundary
+
+boundary_buffer <- boundary[2,] %>%
+ st_buffer(dist = -45)#, nQuadSegs =3000, joinStyle = "ROUND", endCapStyle = "ROUND")
+#boundary_buffer
+```
+#explaination for boundary wrangling
+```{r}
+map1<-ggplot()+
+  geom_sf(data = boundary[1,], fill = NA, linewidth =0.3)+
+   labs(
+    caption = 'layer 1', 
+  )+
+  mytheme_map
+map1
+ 
+map2<-ggplot()+
+  geom_sf(data = boundary[2,], fill = NA,linewidth =0.3)+
+   labs(
+    caption = 'layer 2', 
+  )+
+  mytheme_map
+
+boundary_small <- boundary[2,] %>%
+  st_difference(boundary[1,])
+
+boundary_big <- boundary[1,]
+
+buffer <-st_union(boundary_small,boundary_big, by_feature=FALSE) 
+
+map3<-ggplot()+
+  geom_sf(data = boundary_small, fill = NA)+
+  mytheme_map
+map4<-ggplot()+
+  geom_sf(data = buffer, fill = NA)+
+  mytheme_map
+```
+
+
+```{r}
+yieldmap_sf_int <- tb %>%
+  mapview(
+        col.regions = viridis(3),
+        alpha.regions = 0.1,
+        cex = .05,
+        lwd = 0,
+        map.types = "Esri.WorldImagery"
+)
+
+yieldmap_sf_int
+```
+
+
+Separating two polygon
+
+```{r}
+boundary_small <- boundary[2,] %>%
+  st_difference(boundary[1,]) %>%
+  st_buffer(dist = -20, nQuadSegs =4000, joinStyle = "ROUND", endCapStyle = "ROUND")
+boundary_big <- boundary[1,] %>%
+  st_buffer(dist = -40, nQuadSegs =10000, joinStyle = "ROUND", endCapStyle = "ROUND")
+
+buffer <-st_union(boundary_small,boundary_big, by_feature=FALSE) 
+
+
+
+yieldmap_raw +
+  geom_sf(data = buffer, fill = NA, color = "red")+
+  geom_sf(data = boundary[2,], fill = NA, color = "orange")
+  ggsave("../output/raw_yield_with_boundaryandbuffer.png", width = 6, height = 4)
+  
+  
+  
+
+
+
+```
+
+```{r}
+newmap<-ggplot(corn_yield16_w_sf)+
+  geom_sf(aes(color = yield_buac), size =.1)+
+  scale_color_viridis_b()+
+  geom_sf(data =buffer,
+         fill = NA, color="orange", linewidth=0.4
+          )+
+  labs(title = "Yield map after yield and speed filter with buffer",
+        color = "Raw yield (bu/ac)")+
+  mytheme_map
+newmap
+ggsave("../output/buffer_on_sf_yield_map.png", height = 5, width = 5)
+```
+
+Let’s create a negative buffer of ....
+
+
+## Filtering position  
+```{r}
+#sf_use_s2(FALSE)
+corn_yield16_w_pf <- corn_yield16_w_sf %>% 
+  st_intersection(buffer) %>%
+  dplyr::select(speed_mph, yield_buac)
+
+summary(corn_yield16_w_pf)
+
+```
+```{r}
+
+denplot<-ggplot(data = corn_yield16_w_pf, 
+       aes(x = yield_buac))+
+  geom_density()+
+  geom_rug() +
+  scale_x_continuous(breaks = c(0,50,100,150,200,250,300,350))+
+  xlab("clean yield (bu/ac)")+
+  theme(
+        axis.title = element_text(size =30),
+        axis.text = element_text(size = 28)
+        )
+denplot
+
+ggsave("../output/density_distribution of the cleaned yield data.png", height = 4, width = 6)
+```
+
+# rqw map with buffer
+```{r}
+raw_yield_map_withboundary <- yieldmap_raw +
+  geom_sf(data = boundary[2,],
+          color="orange", fill =NA, linewidth=0.3
+          )+
+  geom_sf(data = buffer, color = "red", fill = NA, linewidth=0.3)
+raw_yield_map_withboundary
+ 
+
+ggsave("../output/raw_yield_map_withboundary.png", width = 6,height = 4)
+```
+
+
+# mapping with filtering
+```{r}
+map_clean<-ggplot()+
+  geom_sf(data = corn_yield16_w_pf, size =.1,
+          aes(color = yield_buac)
+          )+
+   labs(caption = "Clean yield map, corn-2016",
+        color = "Clean yield (bu/ac)")+
+  scale_color_viridis_b()+
+  geom_sf(data = buffer, fill =NA)+
+  geom_sf(data = boundary[2,], fill=NA)+
+  mytheme_map
+map_clean
+ggsave("../output/all_maps_raw_clean.png", height =3, width = 6)
+```
+
+# all map combine
+# map output
+```{r}
+design <- "
+  11333333
+  11333333
+  22333333
+  22333333
+"
+
+map1+map2 + raw_yield_map_withboundary+ plot_layout(design = design)
+ggsave("../output/boundarylayer.png", height = 5, width = 6)
+```
+
+#clean map and distribution
+```{r}
+dgn <- "
+    11111111
+    11111111
+    22222222
+    22222222
+    22222222
+"
+denplot/map_clean + plot_layout(design = dgn)
+ggsave("../output/denplot_and_clean_map.png",width = 5,height=6)
+```
+
+
+## Position yield cleaned summary  
+```{r}
+summary(corn_yield16_w_pf$yield_buac)
+```
+
+# Raw vs Cleaned data  
+## Summary statistics  
+### Raw yield summary  
+```{r}
+summary_raw <- corn_yield16_w %>%
+  summarise(n = length(yield_buac),
+            min = min(yield_buac),
+            max = max(yield_buac),
+            mean = mean(yield_buac),
+            sd = sd (yield_buac),
+            cv = (sd/mean)*100
+            ) %>%
+  mutate(data = "raw") %>%
+  dplyr::select(data,everything())
+
+summary_raw
+```
+
+### Clean yield summary  
+```{r}
+summary_filtered <- corn_yield16_w_pf %>%
+  summarise(observations = length(yield_buac),
+            min = min(yield_buac),
+            mean = mean(yield_buac),
+            max = max(yield_buac),
+            standard_deviation = sd(yield_buac),
+            #cv = (sd/mean)*100
+            ) %>%
+  mutate(data = "clean data") %>%
+  dplyr::select(data,everything())%>%
+  st_drop_geometry()
+write.csv(summary_filtered,"../output/yield_summary_table_cleaned.csv")
+
+summary_filtered
+```
+
+### Combined yield summary  
+```{r}
+summary_raw %>%
+  bind_rows(summary_filtered)
+```
+
+## Density plot  
+```{r}
+ggplot()+
+  geom_density(data = corn_yield16_w, 
+               aes(x = yield_buac), 
+               fill = "blue", 
+               alpha = .5)+
+  geom_density(data = corn_yield16_w_pf, 
+               aes(x = yield_buac), 
+               fill = "yellow", 
+               alpha = .5)
+```
+
+# Maps  
+## Raw yield map  
+```{r}
+yieldmap_raw
+```
+
+## Clean yield map  
+```{r}
+yieldmap_clean <- ggplot(corn_yield16_w_pf)+
+  geom_sf(aes(color = yield_buac), 
+          size = .1)+
+  scale_color_viridis_b()+
+   labs(title = "Cleaned Yield Map 2016 - Corn",
+        color = "Cleaned yield (bu/ac)")+
+  mytheme_map
+
+yieldmap_clean
+```
+
+## Clean yield map interactive  
+```{r}
+yieldmap_clean_int <- corn_yield16_w_pf %>%
+  mapview(zcol = "yield_buac",
+        col.regions = viridis(3),
+        alpha.regions = 1,
+        cex = .1,
+        lwd = 0,
+        map.types = "Esri.WorldImagery"
+)
+
+yieldmap_clean_int
+```
+
+## Side-by-side raw vs. cleaned yield map  
+```{r}
+#library(patchwork)
+(yieldmap_raw / yieldmap_clean)
+ggsave("../output/cleaned and raw map together.png", height = 5,width = 5)
+
+```
+
+## Side-by-side raw vs. cleaned yield map interactive  
+```{r}
+sync(yieldmap_raw_int, yieldmap_clean_int) #from leafsyc package
+```
+
+# Exporting cleaned version  
+```{r}
+write_sf(corn_yield16_w_pf,
+         "../data/corn_yield16_clean.geojson",
+         delete_dsn = T
+         )
+
+```
+
+# Summary  
+Today we:  
+
+- Learned about and implemented 5 yield filters (yield, speed, position)  
+- Compared raw and cleaned yield monitor data
+
